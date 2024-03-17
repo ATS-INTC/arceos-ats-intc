@@ -8,8 +8,7 @@ use alloc::vec;
 use driver_common::{BaseDriverOps, DevError, DevResult, DeviceType};
 use axi_dma::*;
 use axi_ethernet::*;
-use spin::{Mutex, Lazy, Once};
-use crossbeam::queue::SegQueue;
+use spin::Mutex;
 
 use crate::{EthernetAddress, NetBufPtr, NetDriverOps};
 
@@ -19,18 +18,12 @@ const BD_CNT: usize = 1024;
 const MAC_ADDR: [u8; 6] = [0x00, 0x0A, 0x35, 0x01, 0x02, 0x03];
 const RX_BUFFER_SIZE: usize = 9000;
 
-pub struct AsyncDriver {
-    pub dma: Arc<AxiDma>,
-    eth: Arc<Mutex<AxiEthernet>>,
-}
-
-pub static ASYNC_DRIVER: Once<AsyncDriver> = Once::new();
-pub static RX_BUFS: Lazy<SegQueue<BufPtr>> = Lazy::new(|| SegQueue::new());
-
 /// The Axi Ethernet device driver
 pub struct AxiEth {
+    dma: Arc<AxiDma>,
+    eth: Arc<Mutex<AxiEthernet>>,
     tx_transfers: VecDeque<Transfer>,
-    mac_address: [u8; 6]
+    rx_transfers: VecDeque<Transfer>,
 }
 
 impl AxiEth {
@@ -67,6 +60,7 @@ impl AxiEth {
         // enable tx & rx intr
         dma.intr_enable();
 
+        let rx_transfers = VecDeque::new();
 
         let eth = Arc::new(Mutex::new(AxiEthernet::new(eth_base, dma_base)));
 
@@ -90,13 +84,11 @@ impl AxiEth {
         eth_inner.enable_rx_cmplt();
         eth_inner.start();
         drop(eth_inner);
-        ASYNC_DRIVER.call_once(|| AsyncDriver {
-            dma,
-            eth
-        });
-        Ok(Self {
+        Ok(Self { 
+            dma, 
+            eth,
             tx_transfers: VecDeque::new(),
-            mac_address: MAC_ADDR
+            rx_transfers,
         })
     }
 }
@@ -113,7 +105,9 @@ impl BaseDriverOps for AxiEth {
 
 impl NetDriverOps for AxiEth {
     fn mac_address(&self) -> EthernetAddress {
-        EthernetAddress(self.mac_address)
+        let mut mac_address = [0; 6];
+        self.eth.lock().get_mac_address(&mut mac_address);
+        EthernetAddress(mac_address)
     }
 
     fn rx_queue_size(&self) -> usize {
@@ -125,12 +119,12 @@ impl NetDriverOps for AxiEth {
     }
 
     fn can_receive(&self) -> bool {
-        !RX_BUFS.is_empty()
+        self.eth.lock().can_receive()
     }
 
     fn can_transmit(&self) -> bool {
         // Default implementation is return true forever.
-        true
+        self.eth.lock().is_ready()
     }
 
     fn recycle_rx_buffer(&mut self, rx_buf: NetBufPtr) -> DevResult {
@@ -151,12 +145,36 @@ impl NetDriverOps for AxiEth {
         if !self.can_receive() {
             return Err(DevError::Again);
         }
-        Ok(NetBufPtr::from(RX_BUFS.pop().unwrap()))
+        if let Some(transfer) = self.rx_transfers.pop_front() {
+            let buf = transfer.wait().map_err(|_| panic!("Unexpected error"))?;
+            let slice = vec![0u8; RX_BUFFER_SIZE].into_boxed_slice();
+            let len = slice.len();
+            let rx_buf = BufPtr::new(NonNull::new(Box::into_raw(slice) as *mut u8).unwrap(), len);
+            match self.dma.rx_submit(rx_buf) {
+                Ok(transfer) => self.rx_transfers.push_back(transfer),
+                Err(err) => panic!("Unexpected err: {:?}", err),
+            };
+            Ok(NetBufPtr::from(buf))
+        } else {
+            // RX queue is empty, receive from AxiNIC.
+            let slice = vec![0u8; RX_BUFFER_SIZE].into_boxed_slice();
+            let len = slice.len();
+            let rx_buf = BufPtr::new(NonNull::new(Box::into_raw(slice) as *mut u8).unwrap(), len);
+            let completed_buf = self.dma.rx_submit(rx_buf).map_err(|_| panic!("Unexpected error"))?.wait().unwrap();
+            let slice = vec![0u8; RX_BUFFER_SIZE].into_boxed_slice();
+            let len = slice.len();
+            let rx_buf = BufPtr::new(NonNull::new(Box::into_raw(slice) as *mut u8).unwrap(), len);
+            match self.dma.rx_submit(rx_buf) {
+                Ok(transfer) => self.rx_transfers.push_back(transfer),
+                Err(err) => panic!("Unexpected err: {:?}", err),
+            };
+            Ok(NetBufPtr::from(completed_buf))
+        }
     }
 
     fn transmit(&mut self, tx_buf: NetBufPtr) -> DevResult {
         let tx_buf = netbuf2buf(tx_buf)?;
-        match ASYNC_DRIVER.get().unwrap().dma.tx_submit(tx_buf) {
+        match self.dma.tx_submit(tx_buf) {
             Ok(transfer) => {
                 self.tx_transfers.push_back(transfer);
                 Ok(())
@@ -169,24 +187,6 @@ impl NetDriverOps for AxiEth {
     fn alloc_tx_buffer(&mut self, size: usize) -> DevResult<NetBufPtr> {
         let slice = vec![0u8; size].into_boxed_slice();
         Ok(NetBufPtr::from(slice))
-    }
-
-    fn is_async(&self) -> bool {
-        true
-    }
-
-    fn async_driver_run() -> impl FnOnce() + Send + 'static {
-        || {
-            let axi_net = ASYNC_DRIVER.get().unwrap();
-            loop{
-                let slice = vec![0u8; RX_BUFFER_SIZE].into_boxed_slice();
-                let len = slice.len();
-                let rx_buf = BufPtr::new(NonNull::new(Box::into_raw(slice) as *mut u8).unwrap(), len);
-                if let Ok(buf) = axi_net.dma.rx_submit(rx_buf).unwrap().wait() {
-                    RX_BUFS.push(buf);
-                }
-            }
-        }
     }
 }
 

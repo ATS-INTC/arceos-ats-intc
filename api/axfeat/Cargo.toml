@@ -52,6 +52,7 @@ driver-ramdisk = ["axdriver?/ramdisk", "axfs?/use-ramdisk"]
 driver-ixgbe = ["axdriver?/ixgbe"]
 driver-bcm2835-sdhci = ["axdriver?/bcm2835-sdhci"]
 driver-axi-eth = ["axdriver?/axi-eth"]
+driver-async-axi-eth = ["axdriver?/async-axi-eth"]
 
 
 # Logging

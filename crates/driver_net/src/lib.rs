@@ -13,6 +13,10 @@ mod net_buf;
 /// The Axi Ethernet device driver
 pub mod axi_ethernet;
 
+#[cfg(feature = "async-axi-eth")]
+/// The Axi Ethernet device driver
+pub mod async_axi_ethernet;
+
 use core::ptr::NonNull;
 
 #[doc(no_inline)]
@@ -67,6 +71,14 @@ pub trait NetDriverOps: BaseDriverOps {
     /// Allocate a memory buffer of a specified size for network transmission,
     /// returns [`DevResult`]
     fn alloc_tx_buffer(&mut self, size: usize) -> DevResult<NetBufPtr>;
+
+    fn is_async(&self) -> bool {
+        false
+    }
+
+    fn async_driver_run() -> impl FnOnce() + Send + 'static {
+        || { unimplemented!() }
+    }
 }
 
 /// A raw buffer struct for network device.

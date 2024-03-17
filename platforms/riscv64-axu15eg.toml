@@ -25,3 +25,6 @@ mmio-regions = [
 
 # Timer interrupt frequency in Hz.
 timer-frequency = "10_000_000"      # 10MHz
+eth_base = "0x6014_0000"
+dma_base = "0x6010_0000"
+atsintc_base = "0x1000_0000"

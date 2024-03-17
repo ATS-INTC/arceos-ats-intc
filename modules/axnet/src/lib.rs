@@ -45,5 +45,8 @@ pub fn init_network(mut net_devs: AxDeviceContainer<AxNetDevice>) {
 
     let dev = net_devs.take_one().expect("No NIC device found!");
     info!("  use NIC 0: {:?}", dev.device_name());
+    if dev.is_async() {
+        axtask::spawn_raw(AxNetDevice::async_driver_run(), "async-net-driver".into(), axconfig::TASK_STACK_SIZE);
+    }
     net_impl::init(dev);
 }

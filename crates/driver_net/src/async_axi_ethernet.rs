@@ -1,10 +1,11 @@
-use core::convert::From;
+use core::{convert::From, future::poll_fn};
 use core::ptr::NonNull;
 
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use alloc::vec;
+use ats_intc::{AtsIntc, Task};
 use driver_common::{BaseDriverOps, DevError, DevResult, DeviceType};
 use axi_dma::*;
 use axi_ethernet::*;
@@ -163,7 +164,6 @@ impl NetDriverOps for AxiEth {
             },
             Err(err) => panic!("Unexpected err: {:?}", err),
         }
-        
     }
 
     fn alloc_tx_buffer(&mut self, size: usize) -> DevResult<NetBufPtr> {
@@ -177,13 +177,13 @@ impl NetDriverOps for AxiEth {
 
     fn async_driver_run() -> impl FnOnce() + Send + 'static {
         || {
-            let axi_net = ASYNC_DRIVER.get().unwrap();
+            static ATSINTC: AtsIntc = AtsIntc::new(0xffff_ffc0_0000_0000 + 0x1000_0000);
+            let task_ref = Task::new(Box::pin(receive()), 0, ats_intc::TaskType::Other, &ATSINTC);
+            ATSINTC.ps_push(task_ref, 0);
             loop{
-                let slice = vec![0u8; RX_BUFFER_SIZE].into_boxed_slice();
-                let len = slice.len();
-                let rx_buf = BufPtr::new(NonNull::new(Box::into_raw(slice) as *mut u8).unwrap(), len);
-                if let Ok(buf) = axi_net.dma.rx_submit(rx_buf).unwrap().wait() {
-                    RX_BUFS.push(buf);
+                if let Some(task) = ATSINTC.ps_fetch() {
+                    let _ = task.clone().poll();
+                    ATSINTC.intr_push(4, task);
                 }
             }
         }
@@ -226,5 +226,16 @@ fn drop_buf(mut bufptr: BufPtr) {
         core::slice::from_raw_parts_mut(raw_ptr, len)
     };
     let _buf = unsafe { Box::from_raw(slice) };
+}
+
+async fn receive() -> i32 {
+    let axi_net = ASYNC_DRIVER.get().unwrap();
+    loop {
+        let slice = vec![0u8; RX_BUFFER_SIZE].into_boxed_slice();
+        let len = slice.len();
+        let rx_buf = BufPtr::new(NonNull::new(Box::into_raw(slice) as *mut u8).unwrap(), len);
+        let buf = axi_net.dma.rx_submit(rx_buf).unwrap().await;
+        RX_BUFS.push(buf);
+    }
 }
 

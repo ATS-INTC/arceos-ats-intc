@@ -237,6 +237,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ats-intc"
+version = "0.1.0"
+source = "git+https://github.com/ATS-INTC/ats-intc.git?branch=axu15eg#30e4ea6a47de5ca8ec757764d544f3c8e58d9e14"
+dependencies = [
+ "ats-intc-pac",
+ "crossbeam",
+ "log",
+]
+
+[[package]]
+name = "ats-intc-pac"
+version = "0.1.0"
+source = "git+https://github.com/ATS-INTC/ats-intc.git?branch=axu15eg#30e4ea6a47de5ca8ec757764d544f3c8e58d9e14"
+dependencies = [
+ "cortex-m",
+ "vcell",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -399,7 +418,7 @@ dependencies = [
 [[package]]
 name = "axi-dma"
 version = "0.1.0"
-source = "git+https://github.com/zflcs/axi-dma.git?rev=aec3682#aec368283c3042eb591f95dc36bbd005dfb171cd"
+source = "git+https://github.com/zflcs/axi-dma.git#c21d013d91caa575caa3e23e0f6e2041323ba576"
 dependencies = [
  "axidma-pac",
  "embedded-dma",
@@ -430,7 +449,7 @@ dependencies = [
 [[package]]
 name = "axidma-pac"
 version = "0.1.0"
-source = "git+https://github.com/zflcs/axi-dma.git?rev=aec3682#aec368283c3042eb591f95dc36bbd005dfb171cd"
+source = "git+https://github.com/zflcs/axi-dma.git#c21d013d91caa575caa3e23e0f6e2041323ba576"
 dependencies = [
  "cortex-m",
  "vcell",
@@ -470,6 +489,7 @@ dependencies = [
 name = "axnet"
 version = "0.1.0"
 dependencies = [
+ "axconfig",
  "axdriver",
  "axerrno",
  "axhal",
@@ -865,6 +885,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7059fff8937831a9ae6f0fe4d658ffabf58f2ca96aa9dec1c889f936f705f216"
 
 [[package]]
+name = "crossbeam"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2801af0d36612ae591caa9568261fddce32ce6e08a7275ea334a06a4ad021a2c"
+dependencies = [
+ "cfg-if",
+ "crossbeam-epoch",
+ "crossbeam-queue",
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "crossbeam-channel"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -896,6 +928,16 @@ dependencies = [
  "crossbeam-utils",
  "memoffset",
  "scopeguard",
+]
+
+[[package]]
+name = "crossbeam-queue"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1cfb3ea8a53f37c40dea2c7bedcbd88bdfae54f5e2175d6ecaff1c988353add"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
 ]
 
 [[package]]
@@ -963,8 +1005,10 @@ dependencies = [
 name = "driver_net"
 version = "0.1.0"
 dependencies = [
+ "ats-intc",
  "axi-dma",
  "axi-ethernet",
+ "crossbeam",
  "driver_common",
  "ixgbe-driver",
  "log",
